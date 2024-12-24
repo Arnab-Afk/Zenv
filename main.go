@@ -1,42 +1,39 @@
-// main.go
 package main
 
 import (
-	"log"
-
-	"github.com/arnab-afk/Zenv/config"
-	"github.com/arnab-afk/Zenv/handlers"
-	"github.com/arnab-afk/Zenv/middleware"
-	"github.com/gin-gonic/gin"
+    "github.com/arnab-afk/Zenv/auth"
+    "github.com/arnab-afk/Zenv/config"
+    "github.com/arnab-afk/Zenv/database"
+    "github.com/arnab-afk/Zenv/security"
+    "github.com/arnab-afk/Zenv/monitoring"
+    "github.com/gin-gonic/gin"
 )
 
 func main() {
-	// Initialize configuration
-	cfg := config.Load()
+    // Initialize configuration
+    config.LoadConfig()
 
-	// Setup router
-	r := gin.Default()
+    // Initialize database
+    database.InitDB()
 
-	// Add middleware
-	r.Use(middleware.RateLimit())
-	r.Use(middleware.Authentication())
+    // Initialize logging
+    monitoring.SetupLogging()
 
-	// Routes
-	api := r.Group("/api/v1")
-	{
-		secrets := api.Group("/secrets")
-		{
-			secrets.POST("/", handlers.CreateSecret)
-			secrets.GET("/:id", handlers.GetSecret)
-			secrets.PUT("/:id", handlers.UpdateSecret)
-			secrets.DELETE("/:id", handlers.DeleteSecret)
-		}
+    // Initialize key rotation scheduler
+    security.StartKeyRotationScheduler()
 
-		keys := api.Group("/keys")
-		{
-			keys.POST("/rotate", handlers.RotateKeys)
-		}
-	}
+    // Initialize rate limiter
+    rateLimiter := security.SetupRateLimiter()
 
-	log.Fatal(r.Run(":8080"))
+    // Set up Gin router
+    router := gin.Default()
+
+    // Apply rate limiter middleware
+    router.Use(rateLimiter)
+
+    // Define routes
+    auth.SetupRoutes(router)
+
+    // Start the server
+    router.Run(":8080")
 }
