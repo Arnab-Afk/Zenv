@@ -1,0 +1,2 @@
+{"level":"info","ts":1735156944.9706318,"caller":"Zenv/main.go:43","msg":"Starting server on :8080"}
+{"level":"info","ts":1735157714.3881903,"caller":"Zenv/main.go:49","msg":"Starting server on :8080"}

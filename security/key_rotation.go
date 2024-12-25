@@ -4,11 +4,13 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"errors"
 	"time"
 )
 
 var (
 	currentKey          []byte
+	previousKey         []byte
 	keyRotationInterval = 24 * time.Hour
 )
 
@@ -18,6 +20,7 @@ func StartKeyRotationScheduler() {
 	go func() {
 		ticker := time.NewTicker(keyRotationInterval)
 		for range ticker.C {
+			previousKey = currentKey
 			generateNewKey()
 		}
 	}()
@@ -32,9 +35,59 @@ func generateNewKey() {
 }
 
 func EncryptSecret(plaintext []byte) []byte {
-	block, _ := aes.NewCipher(currentKey)
-	gcm, _ := cipher.NewGCM(block)
+	block, err := aes.NewCipher(currentKey)
+	if err != nil {
+		panic(err)
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		panic(err)
+	}
+
 	nonce := make([]byte, gcm.NonceSize())
-	rand.Read(nonce)
+	if _, err := rand.Read(nonce); err != nil {
+		panic(err)
+	}
+
 	return gcm.Seal(nonce, nonce, plaintext, nil)
+}
+
+func DecryptSecret(ciphertext []byte) ([]byte, error) {
+	// Try with current key first
+	plaintext, err := decryptWithKey(ciphertext, currentKey)
+	if err == nil {
+		return plaintext, nil
+	}
+
+	// Try with previous key if current fails
+	if previousKey != nil {
+		plaintext, err = decryptWithKey(ciphertext, previousKey)
+		if err == nil {
+			return plaintext, nil
+		}
+	}
+
+	return nil, errors.New("decryption failed")
+}
+
+func decryptWithKey(ciphertext []byte, key []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(ciphertext) < gcm.NonceSize() {
+		return nil, errors.New("malformed ciphertext")
+	}
+
+	nonce := ciphertext[:gcm.NonceSize()]
+	ciphertext = ciphertext[gcm.NonceSize():]
+
+	return gcm.Open(nil, nonce, ciphertext, nil)
 }
