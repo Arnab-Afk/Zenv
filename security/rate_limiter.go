@@ -1,22 +1,22 @@
 package security
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/gin-gonic/gin"
-	"github.com/throttled/throttled/store/memstore"
-	"github.com/throttled/throttled/v2"
+	"golang.org/x/time/rate"
 )
 
 func SetupRateLimiter() gin.HandlerFunc {
-	store, _ := memstore.New(65536)
-	quota := throttled.RateQuota{MaxRate: throttled.PerMin(10), MaxBurst: 5} // 10 requests per minute
-	rateLimiter, _ := throttled.NewGCRARateLimiter(store, quota)
-	rateLimiterMiddleware := throttled.HTTPRateLimiter{
-		RateLimiter: rateLimiter,
-		VaryBy:      &throttled.VaryBy{Path: true},
-	}
+	limiter := rate.NewLimiter(rate.Every(time.Second), 10)
 
 	return func(c *gin.Context) {
-		rateLimiterMiddleware.RateLimit(c.Writer, c.Request)
+		if !limiter.Allow() {
+			c.JSON(http.StatusTooManyRequests, gin.H{"error": "Rate limit exceeded"})
+			c.Abort()
+			return
+		}
 		c.Next()
 	}
 }

@@ -1,39 +1,39 @@
 package main
 
 import (
-    "github.com/arnab-afk/Zenv/auth"
-    "github.com/arnab-afk/Zenv/config"
-    "github.com/arnab-afk/Zenv/database"
-    "github.com/arnab-afk/Zenv/security"
-    "github.com/arnab-afk/Zenv/monitoring"
-    "github.com/gin-gonic/gin"
+	"github.com/arnab-afk/Zenv/auth"
+	"github.com/arnab-afk/Zenv/config"
+	"github.com/arnab-afk/Zenv/routes"
+	"github.com/arnab-afk/Zenv/security"
+	"github.com/gin-gonic/gin"
 )
 
 func main() {
-    // Initialize configuration
-    config.LoadConfig()
+	// Initialize configuration
+	config.LoadConfig()
 
-    // Initialize database
-    database.InitDB()
+	// Initialize database
+	database.InitDB()
 
-    // Initialize logging
-    monitoring.SetupLogging()
+	// Initialize logging
+	monitoring.SetupLogging()
 
-    // Initialize key rotation scheduler
-    security.StartKeyRotationScheduler()
+	// Initialize key rotation scheduler
+	security.StartKeyRotationScheduler()
 
-    // Initialize rate limiter
-    rateLimiter := security.SetupRateLimiter()
+	// Initialize rate limiter
+	rateLimiter := security.SetupRateLimiter()
 
-    // Set up Gin router
-    router := gin.Default()
+	// Set up Gin router
+	router := gin.Default()
 
-    // Apply rate limiter middleware
-    router.Use(rateLimiter)
+	// Apply middlewares
+	router.Use(rateLimiter)
+	router.Use(auth.AuthMiddleware())
 
-    // Define routes
-    auth.SetupRoutes(router)
+	// Setup routes
+	routes.SetupSecretRoutes(router)
 
-    // Start the server
-    router.Run(":8080")
+	// Start the server
+	router.Run(":8080")
 }

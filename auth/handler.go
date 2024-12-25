@@ -1,56 +1,71 @@
 package auth
 
 import (
+	"fmt"
+	"log"
 	"net/http"
 
-	"github.com/arnab-afk/Zenv/database"
-	"github.com/arnab-afk/Zenv/security"
-	"github.com/gin-gonic/gin"
+	"github.com/pquerna/otp/totp"
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
-func SetupRoutes(router *gin.Engine) {
-	router.POST("/auth/token", handleToken)
-	router.GET("/secret", authMiddleware(), handleSecret)
+var (
+	googleOauthConfig = &oauth2.Config{
+		RedirectURL:  "http://localhost:8080/oauth2/callback",
+		ClientID:     "your-client-id",
+		ClientSecret: "your-client-secret",
+		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email"},
+		Endpoint:     google.Endpoint,
+	}
+	oauthStateString = "random"
+	userSecret       = "your-mfa-secret" // This should be securely stored and unique per user
+)
+
+func handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
+	url := googleOauthConfig.AuthCodeURL(oauthStateString)
+	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
 
-func handleToken(c *gin.Context) {
-	var request struct {
-		AccessToken string `json:"access_token"`
-		MFA         string `json:"mfa"`
-		IP          string `json:"ip"`
-	}
-	if err := c.BindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request"})
+func handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
+	if r.FormValue("state") != oauthStateString {
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
 
-	// Verify MFA
-	if !security.VerifyMFA(request.MFA) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid MFA"})
-		return
-	}
-
-	// Verify IP
-	if !security.VerifyIP(request.IP) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized IP"})
-		return
-	}
-
-	// Store the access token in the database
-	encryptedToken, err := security.Encrypt(request.AccessToken)
+	code := r.FormValue("code")
+	token, err := googleOauthConfig.Exchange(oauth2.NoContext, code)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt access token"})
-		return
-	}
-	_, err = database.DB.Exec("INSERT INTO access_tokens (token) VALUES ($1)", encryptedToken)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to store access token"})
+		log.Printf("oauthConf.Exchange() failed with '%s'\n", err)
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Access token received"})
+	// Render MFA form
+	fmt.Fprintf(w, `<html><body>
+        <form action="/mfa" method="POST">
+            <label for="otp">Enter OTP:</label>
+            <input type="text" id="otp" name="otp">
+            <input type="hidden" name="access_token" value="%s">
+            <input type="submit" value="Submit">
+        </form>
+        </body></html>`, token.AccessToken)
 }
 
-func handleSecret(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"secret": "This is a protected resource"})
+func handleMFA(w http.ResponseWriter, r *http.Request) {
+	otp := r.FormValue("otp")
+	accessToken := r.FormValue("access_token")
+
+	if totp.Validate(otp, userSecret) {
+		fmt.Fprintf(w, "MFA successful! Access Token: %s", accessToken)
+	} else {
+		fmt.Fprintf(w, "MFA failed! Invalid OTP.")
+	}
+}
+
+func main() {
+	http.HandleFunc("/oauth2/login", handleGoogleLogin)
+	http.HandleFunc("/oauth2/callback", handleGoogleCallback)
+	http.HandleFunc("/mfa", handleMFA)
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }

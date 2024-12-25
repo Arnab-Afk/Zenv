@@ -1,19 +1,29 @@
 package config
 
 import (
-	"log"
+	"os"
 
-	"github.com/spf13/viper"
+	"github.com/joho/godotenv"
 )
 
+type Config struct {
+	DBHost     string
+	DBUser     string
+	DBPassword string
+	DBName     string
+	JWTSecret  string
+}
+
+var AppConfig Config
+
 func LoadConfig() {
-	viper.SetConfigName("config")
-	viper.SetConfigType("yaml")
-	viper.AddConfigPath(".")
+	godotenv.Load()
 
-	if err := viper.ReadInConfig(); err != nil {
-		log.Fatalf("Error reading config file: %s", err)
+	AppConfig = Config{
+		DBHost:     os.Getenv("DB_HOST"),
+		DBUser:     os.Getenv("DB_USER"),
+		DBPassword: os.Getenv("DB_PASSWORD"),
+		DBName:     os.Getenv("DB_NAME"),
+		JWTSecret:  os.Getenv("JWT_SECRET"),
 	}
-
-	log.Println("Configuration loaded successfully")
 }
